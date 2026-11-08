@@ -1,0 +1,19 @@
+{
+  "name": "agent-ts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "agent_py 的 TypeScript 版本：能调用大模型 + 本地工具的极简 Agent",
+  "type": "module",
+  "scripts": {
+    "start": "tsx agent.ts"
+  },
+  "dependencies": {
+    "dotenv": "^17.0.0",
+    "openai": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0"
+  }
+}
