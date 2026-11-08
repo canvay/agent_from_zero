@@ -1,5 +1,6 @@
 import subprocess
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 MAX_OUTPUT = 8000  # 工具返回给模型的最大字符数
@@ -65,6 +66,29 @@ def write_file(path, content):
 
 
 @tool(
+    "edit_file",
+    "编辑修改文件，旧字符在文件里恰好出现一次才替换，出现零次或多次都返回错误，需要给出更长的被替换原文",
+    _params(path="文件路径", old="被替换的旧字符", new="替换成的新字符"),
+)
+def edit_file(path, old, new):
+    p = Path(path)
+    if not old:
+        return "old 不能为空字符串"
+    # newline="" 禁用换行转换，避免编辑时把文件原有换行符改写成本平台风格
+    with p.open("r", encoding="utf-8", newline="") as f:
+        content = f.read()
+    count = content.count(old)
+    if count > 1:
+        return f"{old!r}出现了{count}次，需要给出更长的被替换原文"
+    elif count < 1:
+        return f"{old!r}不存在，无法替换"
+    new_content = content.replace(old, new)
+    with p.open("w", encoding="utf-8", newline="") as f:
+        f.write(new_content)
+    return "已完成内容修改"
+
+
+@tool(
     "run_shell",
     "在当前目录执行一条 shell 命令，返回退出码、标准输出和错误输出。",
     _params(command="要执行的命令"),
@@ -85,6 +109,15 @@ def fetch_url(url: str):
     req = urllib.request.Request(url, headers={"User-Agent": "canvay-agent"})
     with urllib.request.urlopen(req, timeout=15) as resp:
         return resp.read().decode("utf-8", errors="replace")
+
+
+@tool(
+    "get_time",
+    "返回当前时间",
+    _params(),
+)
+def get_time():
+    return datetime.now()
 
 
 def get_schemas():
