@@ -5,6 +5,7 @@ import os
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from permissions import PermissionManager
 from tools import execute, get_schemas
 
 load_dotenv()
@@ -16,6 +17,21 @@ SYSTEM = (
     "你是一个能操作本地文件和命令行的编程助手。"
     "需要时调用工具，完成任务后直接用文字总结，不要再调用工具。"
 )
+
+perms = PermissionManager()
+
+
+def handle_call(call, perms):
+    """解析参数 → 权限检查 → 执行。永远返回字符串。"""
+    name = call.function.name
+    try:
+        args = json.loads(call.function.arguments or "{}")
+    except json.JSONDecodeError:
+        return "Error: 参数不是合法的 JSON"
+    decision = perms.check(name, args)
+    if not decision.allowed:
+        return f"[权限拒绝] {decision.reason}"  # 拒绝也要回传，让模型换条路
+    return execute(name, args)
 
 
 # agent循环
@@ -30,15 +46,7 @@ def run(user_input: str, messages) -> None:
         if not msg.tool_calls:
             return msg.content
         for call in msg.tool_calls:
-            name = call.function.name
-            arguments = call.function.arguments
-            try:
-                args = json.loads(arguments or "{}")
-            except json.JSONDecodeError:
-                result = "Error: 参数不是合法的 JSON"
-            else:
-                print(f"🔧 {name}({arguments[:80]})")
-                result = execute(name, args)
+            result = handle_call(call, perms)
             messages.append(
                 {"role": "tool", "tool_call_id": call.id, "content": result}
             )
