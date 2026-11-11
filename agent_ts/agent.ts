@@ -7,6 +7,12 @@ import type {
   ChatCompletionMessage,
   ChatCompletionMessageParam,
 } from "openai/resources/chat/completions";
+import {
+  clearOldToolResults,
+  compact,
+  loadSession,
+  saveSession,
+} from "./context";
 import { PermissionManager, getSharedRl } from "./permissions";
 import { execute, getSchemas } from "./tools";
 
@@ -16,11 +22,15 @@ const client = new OpenAI({
 });
 const MODEL = process.env.MODEL ?? "";
 const MAX_STEPS = 20; // 防止死循环：Agent 最多转 20 圈
+const SOFT_LIMIT = 16000; // 超过：清理旧工具结果
+const HARD_LIMIT = 24000; // 超过：摘要压缩
+// 这两个是演示用的小值，方便你复现。实际按模型窗口的比例来设。
 const SYSTEM =
   "你是一个能操作本地文件和命令行的编程助手。" +
   "需要时调用工具，完成任务后直接用文字总结，不要再调用工具。";
 
 const perms = new PermissionManager();
+const usage = { promptTokens: 0 }; // 上一次调用的真实 token 数（第 6 课会收进 Session）
 
 /** 解析参数 → 权限检查 → 执行。永远返回字符串。 */
 async function handleCall(
@@ -45,11 +55,21 @@ async function handleCall(
 async function run(userInput: string, messages: ChatCompletionMessageParam[]): Promise<string> {
   messages.push({ role: "user", content: userInput });
   for (let step = 0; step < MAX_STEPS; step++) {
+    // 用上一次调用的真实 token 数，决定这一轮要不要处理
+    if (usage.promptTokens > HARD_LIMIT) {
+      // 对应 Python 的 messages[:] = compact(...)：原地替换内容，保持引用不变
+      messages.splice(0, messages.length, ...(await compact(client, MODEL, messages)));
+    } else if (usage.promptTokens > SOFT_LIMIT) {
+      clearOldToolResults(messages);
+    }
+
     const resp = await client.chat.completions.create({
       model: MODEL,
       messages,
       tools: getSchemas(),
     });
+    usage.promptTokens = resp.usage?.prompt_tokens ?? 0;
+    console.log(`   [prompt_tokens=${usage.promptTokens}]`);
     // SDK v6 对自定义网关会返回联合类型，这里收窄为标准消息类型
     const msg = resp.choices[0].message as ChatCompletionMessage;
 
@@ -79,7 +99,8 @@ const rl = getSharedRl();
 // stdin 结束（EOF / Ctrl+Z）时干净退出：挂起的 question 永远不会 resolve，
 // 不处理会触发 Node 的 "unsettled top-level await"（exit code 13）
 rl.on("close", () => process.exit(0));
-const messages: ChatCompletionMessageParam[] = [{ role: "system", content: SYSTEM }];
+const messages: ChatCompletionMessageParam[] =
+  loadSession("default") ?? [{ role: "system", content: SYSTEM }];
 while (true) {
   let q: string;
   try {
@@ -89,5 +110,6 @@ while (true) {
   }
   if (q === "exit" || q === "quit") break;
   console.log("\n" + (await run(q, messages)) + "\n");
+  saveSession("default", messages);
 }
 rl.close();

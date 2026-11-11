@@ -3,12 +3,25 @@
 import json
 import os
 
+from context import (
+    clear_old_tool_results,
+    compact,
+    load_session,
+    save_session,
+)
 from dotenv import load_dotenv
 from openai import OpenAI
 from permissions import PermissionManager
 from tools import execute, get_schemas
 
 load_dotenv()
+
+
+SOFT_LIMIT = 16000  # 超过：清理旧工具结果
+HARD_LIMIT = 24000  # 超过：摘要压缩
+# 这两个是演示用的小值，方便你复现。实际按模型窗口的比例来设。
+
+usage = {"prompt_tokens": 0}  # 上一次调用的真实 token 数（第 6 课会收进 Session）
 
 client = OpenAI(api_key=os.environ["API_KEY"], base_url=os.environ["BASE_URL"])
 MODEL = os.environ["MODEL"]
@@ -38,9 +51,17 @@ def handle_call(call, perms):
 def run(user_input: str, messages) -> None:
     messages.append({"role": "user", "content": user_input})
     for step in range(MAX_STEPS):
+        # 用上一次调用的真实 token 数，决定这一轮要不要处理
+        if usage["prompt_tokens"] > HARD_LIMIT:
+            messages[:] = compact(client, MODEL, messages)
+        elif usage["prompt_tokens"] > SOFT_LIMIT:
+            clear_old_tool_results(messages)
+
         resp = client.chat.completions.create(
             model=MODEL, messages=messages, tools=get_schemas()
         )
+        usage["prompt_tokens"] = resp.usage.prompt_tokens if resp.usage else 0
+        print(f"   [prompt_tokens={usage['prompt_tokens']}]")
         msg = resp.choices[0].message
         messages.append(msg.model_dump(exclude_none=True))
         if not msg.tool_calls:
@@ -55,9 +76,10 @@ def run(user_input: str, messages) -> None:
 
 
 if __name__ == "__main__":
-    messages = [{"role": "system", "content": SYSTEM}]
+    messages = load_session("default") or [{"role": "system", "content": SYSTEM}]
     while True:
         q = input("你> ").strip()
         if q in ("exit", "quit"):
             break
         print("\n" + run(q, messages) + "\n")
+        save_session("default", messages)
