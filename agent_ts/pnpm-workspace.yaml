@@ -1,0 +1,6 @@
+allowBuilds:
+  esbuild: true
+# pnpm 12 的项目级设置（package.json 的 pnpm 字段已废弃）
+permissions:
+  dotenv:
+    skills: true

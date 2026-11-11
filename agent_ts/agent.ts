@@ -7,7 +7,8 @@ import type {
   ChatCompletionMessage,
   ChatCompletionMessageParam,
 } from "openai/resources/chat/completions";
-import { execute, getSchemas } from "./tools.js";
+import { PermissionManager, getSharedRl } from "./permissions";
+import { execute, getSchemas } from "./tools";
 
 const client = new OpenAI({
   apiKey: process.env.API_KEY,
@@ -18,6 +19,27 @@ const MAX_STEPS = 20; // 防止死循环：Agent 最多转 20 圈
 const SYSTEM =
   "你是一个能操作本地文件和命令行的编程助手。" +
   "需要时调用工具，完成任务后直接用文字总结，不要再调用工具。";
+
+const perms = new PermissionManager();
+
+/** 解析参数 → 权限检查 → 执行。永远返回字符串。 */
+async function handleCall(
+  call: { id: string; function: { name: string; arguments: string } },
+  perms: PermissionManager,
+): Promise<string> {
+  const name = call.function.name;
+  let args: Record<string, any>;
+  try {
+    args = JSON.parse(call.function.arguments || "{}");
+  } catch {
+    return "Error: 参数不是合法的 JSON";
+  }
+  const decision = await perms.check(name, args);
+  if (!decision.allowed) {
+    return `[权限拒绝] ${decision.reason}`; // 拒绝也要回传，让模型换条路
+  }
+  return execute(name, args);
+}
 
 // ---------- agent 循环 ----------
 async function run(userInput: string, messages: ChatCompletionMessageParam[]): Promise<string> {
@@ -41,21 +63,7 @@ async function run(userInput: string, messages: ChatCompletionMessageParam[]): P
 
     for (const call of msg.tool_calls) {
       if (!("function" in call)) continue; // 跳过非标准工具调用
-      const name = call.function.name;
-      const arguments_ = call.function.arguments;
-      let args: Record<string, any> | undefined;
-      try {
-        args = JSON.parse(arguments_ || "{}");
-      } catch {
-        // 参数不是合法 JSON，保持 undefined，下面按错误处理
-      }
-      let result: string;
-      if (args === undefined) {
-        result = "Error: 参数不是合法的 JSON";
-      } else {
-        console.log(`🔧 ${name}(${arguments_.slice(0, 80)})`);
-        result = await execute(name, args);
-      }
+      const result = await handleCall(call, perms);
       messages.push({
         role: "tool",
         tool_call_id: call.id,
@@ -67,10 +75,18 @@ async function run(userInput: string, messages: ChatCompletionMessageParam[]): P
 }
 
 // ---------- 交互式 REPL ----------
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+const rl = getSharedRl();
+// stdin 结束（EOF / Ctrl+Z）时干净退出：挂起的 question 永远不会 resolve，
+// 不处理会触发 Node 的 "unsettled top-level await"（exit code 13）
+rl.on("close", () => process.exit(0));
 const messages: ChatCompletionMessageParam[] = [{ role: "system", content: SYSTEM }];
 while (true) {
-  const q = (await rl.question("你> ")).trim();
+  let q: string;
+  try {
+    q = (await rl.question("你> ")).trim();
+  } catch {
+    break; // question 被中断（如 Ctrl+C），退出而不是崩掉
+  }
   if (q === "exit" || q === "quit") break;
   console.log("\n" + (await run(q, messages)) + "\n");
 }
