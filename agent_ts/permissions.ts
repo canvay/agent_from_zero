@@ -7,8 +7,10 @@ import * as readline from "node:readline/promises";
 // Agent 只允许碰这个目录。默认是启动时的当前目录。
 export const WORKSPACE = path.resolve(process.env.NAMI_WORKSPACE ?? process.cwd());
 
+export const SKILLS_DIR = path.join(WORKSPACE, "skills");
+
 // 允许"本次会话一直允许"的工具。run_shell 不在里面：每条命令都要过目。
-const REMEMBERABLE = new Set(["write_file"]);
+export const REMEMBERABLE = new Set(["write_file"]);
 
 // 明显的灾难性命令。注意：这是安全带，不是边界（见文章第八节）。
 const SHELL_DENY_PATTERNS: RegExp[] = [
@@ -34,6 +36,7 @@ const TOOL_RISK: Record<string, Risk> = {
   write_file: Risk.CONFIRM,
   run_shell: Risk.CONFIRM,
   fetch_url: Risk.CONFIRM,
+  load_skill: Risk.SAFE, // 只读，直接放行
 };
 
 /** 把路径解析成绝对路径；不在工作区内返回 null。
@@ -51,7 +54,7 @@ export function resolveInWorkspace(pathStr: string): string | null {
 }
 
 /** 确认界面：展示将要执行的真实内容，而不是模型的自述。 */
-function renderCall(name: string, args: Record<string, any>, maxChars = 400): string {
+export function renderCall(name: string, args: Record<string, any>, maxChars = 400): string {
   if (name === "run_shell") return `  $ ${args.command ?? ""}`;
   if (name === "write_file") {
     const content = String(args.content ?? "");
@@ -72,7 +75,7 @@ export interface Decision {
 }
 
 type Answer = "y" | "n" | "a";
-type Ask = (name: string, args: Record<string, any>) => Promise<[Answer, string]>;
+export type Ask = (name: string, args: Record<string, any>) => Promise<[Answer, string]>;
 
 // 全局共享一个 readline 接口：多处各建一个会导致同一输入被回显两次
 let sharedRl: readline.Interface | null = null;
@@ -108,8 +111,15 @@ export class PermissionManager {
   private hardLimits(name: string, args: Record<string, any>): string | null {
     if (["read_file", "write_file", "list_dir"].includes(name)) {
       const p = String(args.path ?? ".");
-      if (resolveInWorkspace(p) === null) {
+      const resolved = resolveInWorkspace(p);
+      if (resolved === null) {
         return `路径 ${JSON.stringify(p)} 在工作区 ${WORKSPACE} 之外，禁止访问。`;
+      }
+      if (
+        name === "write_file" &&
+        (resolved === SKILLS_DIR || resolved.startsWith(SKILLS_DIR + path.sep))
+      ) {
+        return "技能目录是只读的，Agent 不能修改自己的技能。";
       }
     }
     if (name === "run_shell") {

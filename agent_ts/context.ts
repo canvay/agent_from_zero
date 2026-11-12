@@ -21,6 +21,8 @@ const SUMMARY_PROMPT = `你是对话摘要器。把下面这段 Agent 的历史�
 3. 用简洁的条目写，不要超过 500 字
 只输出摘要本身。`;
 
+export const KEEP_PREFIXES = ["[skill]"]; // 以这些前缀开头的工具结果不清理
+
 /** 超长工具结果掐头留尾（Python 版 truncate_tool_result） */
 export function truncateToolResult(text: string, limit = MAX_TOOL_CHARS): string {
   if (text.length <= limit) return text;
@@ -34,7 +36,11 @@ export function clearOldToolResults(
   keep = KEEP_RECENT_TOOL_RESULTS,
 ): void {
   const toolIdx = messages
-    .map((m, i) => (m.role === "tool" ? i : -1))
+    .map((m, i) => {
+      if (m.role !== "tool") return -1;
+      const content = String((m as { content?: string }).content ?? "");
+      return KEEP_PREFIXES.some((p) => content.startsWith(p)) ? -1 : i;
+    })
     .filter((i) => i >= 0);
   const old = keep > 0 ? toolIdx.slice(0, -keep) : toolIdx;
   for (const i of old) {

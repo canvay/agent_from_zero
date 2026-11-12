@@ -11,7 +11,7 @@ const MAX_OUTPUT = 8000; // 工具返回给模型的最大字符数
 type ToolFunc = (args: any) => string | Promise<string>;
 const TOOLS: Record<string, { schema: ChatCompletionTool; func: ToolFunc }> = {};
 
-function tool(name: string, description: string, parameters: FunctionParameters) {
+export function tool(name: string, description: string, parameters: FunctionParameters) {
   // 对应 Python 的装饰器：tool(...)(func) 把函数注册进 TOOLS
   return (func: ToolFunc): ToolFunc => {
     TOOLS[name] = {
