@@ -40,6 +40,9 @@ TOOL_RISK = {
     "run_shell": Risk.CONFIRM,
     "fetch_url": Risk.CONFIRM,
     "load_skill": Risk.SAFE,  # 只读，直接放行
+    "list_tasks": Risk.SAFE,
+    "schedule_task": Risk.CONFIRM,
+    "cancel_task": Risk.CONFIRM,
 }
 
 

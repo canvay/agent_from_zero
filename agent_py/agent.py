@@ -3,6 +3,7 @@
 import json
 import os
 
+import scheduler  # noqa: F401
 import skills  # 导入即注册 load_skill
 from context import (
     clear_old_tool_results,
