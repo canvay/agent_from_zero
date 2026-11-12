@@ -3,6 +3,7 @@
 import json
 import os
 
+import skills  # 导入即注册 load_skill
 from context import (
     clear_old_tool_results,
     compact,
@@ -13,6 +14,16 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from permissions import PermissionManager
 from tools import execute, get_schemas
+
+BASE_SYSTEM = (
+    "你是一个能使用工具的助手，在用户的工作区内完成任务。"
+    "必要时调用工具，完成后用简洁的语言汇报结果。"
+)
+
+
+def build_system():
+    return BASE_SYSTEM + skills.project_notes() + skills.skills_section()
+
 
 load_dotenv()
 
@@ -26,10 +37,6 @@ usage = {"prompt_tokens": 0}  # 上一次调用的真实 token 数（第 6 课�
 client = OpenAI(api_key=os.environ["API_KEY"], base_url=os.environ["BASE_URL"])
 MODEL = os.environ["MODEL"]
 MAX_STEPS = 20  # 防止死循环：Agent 最多转 20 圈
-SYSTEM = (
-    "你是一个能操作本地文件和命令行的编程助手。"
-    "需要时调用工具，完成任务后直接用文字总结，不要再调用工具。"
-)
 
 perms = PermissionManager()
 
@@ -76,7 +83,9 @@ def run(user_input: str, messages) -> None:
 
 
 if __name__ == "__main__":
-    messages = load_session("default") or [{"role": "system", "content": SYSTEM}]
+    messages = load_session("default") or [{"role": "system", "content": ""}]
+    messages[0] = {"role": "system", "content": build_system()}  # 每次用最新的技能列表
+
     while True:
         q = input("你> ").strip()
         if q in ("exit", "quit"):

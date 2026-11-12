@@ -19,6 +19,8 @@ SUMMARY_PROMPT = """你是对话摘要器。把下面这段 Agent 的历史对�
 3. 用简洁的条目写，不要超过 500 字
 只输出摘要本身。"""
 
+KEEP_PREFIXES = ("[skill]",)  # 以这些前缀开头的工具结果不清理
+
 
 def truncate_tool_result(text, limit=MAX_TOOL_CHARS):
     if len(text) <= limit:
@@ -28,7 +30,11 @@ def truncate_tool_result(text, limit=MAX_TOOL_CHARS):
 
 
 def clear_old_tool_results(messages, keep=KEEP_RECENT_TOOL_RESULTS):
-    tool_idx = [i for i, m in enumerate(messages) if m["role"] == "tool"]
+    tool_idx = [
+        i
+        for i, m in enumerate(messages)
+        if m["role"] == "tool" and not m["content"].startswith(KEEP_PREFIXES)
+    ]
     old = tool_idx[:-keep] if keep > 0 else tool_idx
     for i in old:
         messages[i]["content"] = PLACEHOLDER

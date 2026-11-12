@@ -23,6 +23,8 @@ SHELL_DENY_PATTERNS = [
     r">\s*/dev/sd",
 ]
 
+SKILLS_DIR = WORKSPACE / "skills"
+
 
 class Risk(Enum):
     SAFE = "safe"  # 只读：直接放行
@@ -37,6 +39,7 @@ TOOL_RISK = {
     "write_file": Risk.CONFIRM,
     "run_shell": Risk.CONFIRM,
     "fetch_url": Risk.CONFIRM,
+    "load_skill": Risk.SAFE,  # 只读，直接放行
 }
 
 
@@ -94,8 +97,11 @@ class PermissionManager:
     def _hard_limits(self, name: str, args: dict) -> str | None:
         if name in ("read_file", "write_file", "list_dir"):
             path = args.get("path", ".")
-            if resolve_in_workspace(path) is None:
+            p = resolve_in_workspace(path)
+            if p is None:
                 return f"路径 {path!r} 在工作区 {WORKSPACE} 之外，禁止访问。"
+            if name == "write_file" and p.is_relative_to(SKILLS_DIR):
+                return "技能目录是只读的，Agent 不能修改自己的技能。"
         if name == "run_shell":
             cmd = args.get("command", "")
             for pat in SHELL_DENY_PATTERNS:

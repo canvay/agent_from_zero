@@ -107,6 +107,8 @@ def run_shell(command, timeout=30):
             cwd=WORKSPACE,
             capture_output=True,
             text=True,
+            encoding="utf-8",  # 不指定会用系统区域编码（中文 Windows 是 GBK），遇到 UTF-8 输出直接崩
+            errors="replace",  # 真正的二进制输出（图片等）用替换符兜底，不让读取线程炸掉
             timeout=timeout,
             check=False,
         )
