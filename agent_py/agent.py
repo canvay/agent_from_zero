@@ -9,6 +9,7 @@ from context import (
     compact,
     load_session,
     save_session,
+    truncate_tool_result,
 )
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -41,6 +42,30 @@ MAX_STEPS = 20  # 防止死循环：Agent 最多转 20 圈
 perms = PermissionManager()
 
 
+def make_client():
+    return OpenAI(api_key=os.environ["API_KEY"], base_url=os.environ["BASE_URL"])
+
+
+class Session:
+    """一个会话 = 一份 messages + 一个权限管理器 + 上一次的 token 数"""
+
+    def __init__(self, name, ask=None, persist=True):
+        self.name = name
+        self.persist = persist
+        saved = load_session(name) if persist else None
+        self.messages = saved or [{"role": "system", "content": ""}]
+        self.messages[0] = {
+            "role": "system",
+            "content": build_system(),
+        }  # 每次用最新的技能列表
+        self.perms = PermissionManager(ask=ask)
+        self.prompt_tokens = 0
+
+    def save(self):
+        if self.persist:
+            save_session(self.name, self.messages)
+
+
 def handle_call(call, perms):
     """解析参数 → 权限检查 → 执行。永远返回字符串。"""
     name = call.function.name
@@ -55,40 +80,47 @@ def handle_call(call, perms):
 
 
 # agent循环
-def run(user_input: str, messages) -> None:
+def run(session, user_input, client, model=MODEL, log=print):
+    messages = session.messages
     messages.append({"role": "user", "content": user_input})
-    for step in range(MAX_STEPS):
-        # 用上一次调用的真实 token 数，决定这一轮要不要处理
-        if usage["prompt_tokens"] > HARD_LIMIT:
-            messages[:] = compact(client, MODEL, messages)
-        elif usage["prompt_tokens"] > SOFT_LIMIT:
+    for _ in range(MAX_STEPS):
+        if session.prompt_tokens > HARD_LIMIT:
+            messages[:] = compact(client, model, messages)
+        elif session.prompt_tokens > SOFT_LIMIT:
             clear_old_tool_results(messages)
 
         resp = client.chat.completions.create(
-            model=MODEL, messages=messages, tools=get_schemas()
+            model=model, messages=messages, tools=get_schemas()
         )
-        usage["prompt_tokens"] = resp.usage.prompt_tokens if resp.usage else 0
-        print(f"   [prompt_tokens={usage['prompt_tokens']}]")
+        session.prompt_tokens = resp.usage.prompt_tokens if resp.usage else 0
         msg = resp.choices[0].message
         messages.append(msg.model_dump(exclude_none=True))
+
         if not msg.tool_calls:
-            return msg.content
+            return msg.content or ""
         for call in msg.tool_calls:
-            result = handle_call(call, perms)
+            log(f"🔧 {call.function.name}({call.function.arguments[:80]})")
+            result = handle_call(call, session.perms)
             messages.append(
-                {"role": "tool", "tool_call_id": call.id, "content": result}
+                {
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": truncate_tool_result(result),
+                }
             )
+    return "（达到最大步数，已停止）"
 
-    return f"\n[达到 {MAX_STEPS} 步上限，已停止]"
 
-
-if __name__ == "__main__":
-    messages = load_session("default") or [{"role": "system", "content": ""}]
-    messages[0] = {"role": "system", "content": build_system()}  # 每次用最新的技能列表
-
+def main():
+    client = make_client()
+    session = Session("default")  # ask 不传，默认还是终端确认
     while True:
         q = input("你> ").strip()
         if q in ("exit", "quit"):
             break
-        print("\n" + run(q, messages) + "\n")
-        save_session("default", messages)
+        print("\n" + run(session, q, client) + "\n")
+        session.save()
+
+
+if __name__ == "__main__":
+    main()

@@ -123,7 +123,7 @@ def run_shell(command, timeout=30):
     _params(url="完整的 URL"),
 )
 def fetch_url(url: str):
-    req = urllib.request.Request(url, headers={"User-Agent": "canvay-agent"})
+    req = urllib.request.Request(url, headers={"User-Agent": "nami-agent"})
     with urllib.request.urlopen(req, timeout=15) as resp:
         return resp.read().decode("utf-8", errors="replace")
 
