@@ -1,6 +1,5 @@
 import subprocess
 import urllib.request
-from datetime import datetime
 
 from permissions import WORKSPACE, resolve_in_workspace
 
@@ -126,16 +125,6 @@ def fetch_url(url: str):
     req = urllib.request.Request(url, headers={"User-Agent": "nami-agent"})
     with urllib.request.urlopen(req, timeout=15) as resp:
         return resp.read().decode("utf-8", errors="replace")
-
-
-@tool(
-    "get_time",
-    "返回当前时间",
-    _params(),
-)
-def get_time():
-    return datetime.now()
-
 
 def get_schemas():
     """返回给模型看的全部工具说明书"""

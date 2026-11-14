@@ -3,6 +3,7 @@
 import json
 import os
 
+import mcp_client
 import scheduler  # noqa: F401
 import skills  # 导入即注册 load_skill
 from context import (
@@ -114,6 +115,7 @@ def run(session, user_input, client, model=MODEL, log=print):
 
 def main():
     client = make_client()
+    mcp_client.load_servers()
     session = Session("default")  # ask 不传，默认还是终端确认
     while True:
         q = input("你> ").strip()

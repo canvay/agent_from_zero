@@ -4,6 +4,7 @@ import os
 import sys
 import time
 
+import mcp_client
 import scheduler
 from agent import Session, make_client, run
 from context import SESSION_DIR
@@ -100,6 +101,7 @@ def main():
 
     tg = Telegram(os.environ["TG_BOT_TOKEN"], timeout=POLL_TIMEOUT)
     client = make_client()
+    mcp_client.load_servers()
     sessions = {}
     print("nami-agent 已启动")
     while True:
